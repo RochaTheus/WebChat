@@ -7,8 +7,7 @@ import pytz
 import os 
 
 app = Flask(__name__)
-# ✅ MUDANÇA 1: Configurar para usar a DATABASE_URL do PostgreSQL do Render
-# O Render injetará a URL de conexão do seu banco de dados PostgreSQL nesta variável de ambiente.
+# ✅ Esta linha já está correta para usar a DATABASE_URL do ambiente Render
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = 'sua_chave_secreta_aqui' 
@@ -18,15 +17,6 @@ db.init_app(app)
 CORS(app, resources={r"/*": {"origins": "https://webchat-8xbq.onrender.com"}})
 
 socketio = SocketIO(app, cors_allowed_origins="https://webchat-8xbq.onrender.com")
-
-# ✅ MUDANÇA 2: REMOVER db.create_all() do bloco principal de importação
-# db.create_all() será executado via um "Build Command" no Render (veja abaixo)
-# ou por um script de migração, não na inicialização do app pelo Gunicorn.
-# Removido:
-# with app.app_context():
-#     db.create_all()
-#     print("DEBUG: Banco de dados criado (ou já existente).")
-
 
 @app.route('/')
 def index_cliente():
@@ -174,8 +164,6 @@ def handle_enviar_mensagem(data):
     print(f"Mensagem enviada no protocolo {protocolo} de {remetente}: {texto}")
 
 if __name__ == '__main__':
-    # ✅ MUDANÇA 3: db.create_all() só é chamado aqui para desenvolvimento LOCAL.
-    # No Render, as tabelas serão criadas via "Build Command" ou um script de migração.
     with app.app_context():
         db.create_all()
         print("DEBUG: Banco de dados criado (ou já existente) para desenvolvimento local.")
