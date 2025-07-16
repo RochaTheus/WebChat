@@ -1,10 +1,9 @@
 Flask
-gunicorn
 Flask-SocketIO
-python-socketio
-SQLAlchemy
-Flask-SQLAlchemy 
-pytz
-eventlet
-gevent
+Flask-SQLAlchemy
 Flask-CORS
+eventlet
+pytz
+gunicorn
+python-dotenv 
+psycopg2-binary
