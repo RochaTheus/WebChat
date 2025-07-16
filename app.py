@@ -1,18 +1,21 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
-from models import db, Chat, Mensagem
-from flask_cors import CORS # ✅ Importe a extensão Flask-CORS
+from models import db, Chat, Mensagem # Importe 'db' de 'models'
+from flask_cors import CORS 
 from datetime import datetime
 import pytz
-import os # ✅ Importe o módulo os para variáveis de ambiente
+import os 
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db' # Mantenha a configuração aqui
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.secret_key = 'sua_chave_secreta_aqui'
+app.secret_key = 'sua_chave_secreta_aqui' # Lembre-se de usar uma chave secreta forte em produção!
+
+# ✅ MUDANÇA 1: Inicialize db COM o app
+# Mova esta linha para APÓS a criação do objeto 'app'
+db.init_app(app) 
 
 # ✅ Configuração do CORS para o objeto 'app'
-# Esta linha é crucial para as requisições HTTP regulares (como iniciar_chat, buscar_chat, etc.)
 # Substitua 'https://webchat-8xbq.onrender.com' pela URL REAL do seu frontend no Render.
 # Se houver mais de uma URL de frontend, use uma lista:
 # CORS(app, resources={r"/*": {"origins": ["https://webchat-8xbq.onrender.com", "https://outra-url-frontend.onrender.com"]}})
@@ -20,11 +23,15 @@ CORS(app, resources={r"/*": {"origins": "https://webchat-8xbq.onrender.com"}})
 
 
 # ✅ Flask-SocketIO com configuração de CORS
-# 'cors_allowed_origins' deve ser o mesmo que você configurou acima para o CORS geral.
 socketio = SocketIO(app, cors_allowed_origins="https://webchat-8xbq.onrender.com")
 
-with app.app_context():
-    db.create_all()
+# ✅ MUDANÇA 2: Mova db.create_all() para DENTRO do if __name__ == '__main__':
+# Ele só deve ser executado quando o script é chamado diretamente para fins de desenvolvimento/configuração
+# E não quando o Gunicorn importa o aplicativo.
+# Removido:
+# with app.app_context():
+#     db.create_all()
+
 
 @app.route('/')
 def index_cliente():
@@ -123,19 +130,17 @@ def handle_entrar_sala(data):
     protocolo = data.get('protocolo')
     is_atendente = data.get('is_atendente', False)
 
-    # ✅ DEBUG: Adicionado print para verificar o evento de entrada na sala
     print(f"DEBUG: Evento 'entrar_sala' recebido. Protocolo: {protocolo}, Atendente: {is_atendente}")
 
     if not protocolo:
         emit('sala_entrada', {'status': 'error', 'message': 'Protocolo ausente.'})
-        print("DEBUG: Protocolo ausente para 'entrar_sala'.") # ✅ DEBUG
+        print("DEBUG: Protocolo ausente para 'entrar_sala'.")
         return
 
     chat = Chat.query.get(protocolo)
-    if not chat and protocolo != 'atendente_dashboard': # 'atendente_dashboard' é uma sala especial, não um chat
-        # ✅ ERRO CORRIGIDO: A string 'Chat não encontrado.' agora está devidamente fechada.
+    if not chat and protocolo != 'atendente_dashboard': 
         emit('sala_entrada', {'status': 'error', 'message': 'Chat não encontrado.'}) 
-        print(f"DEBUG: Chat {protocolo} não encontrado para 'entrar_sala'.") # ✅ DEBUG
+        print(f"DEBUG: Chat {protocolo} não encontrado para 'entrar_sala'.")
         return
 
     join_room(protocolo)
@@ -144,7 +149,6 @@ def handle_entrar_sala(data):
 
 @socketio.on('enviar_mensagem')
 def handle_enviar_mensagem(data):
-    # ✅ DEBUG: Adicionado print para verificar o evento de envio de mensagem
     print(f"DEBUG: Evento 'enviar_mensagem' recebido. Dados: {data}")
 
     protocolo = data.get('protocolo')
@@ -152,12 +156,12 @@ def handle_enviar_mensagem(data):
     texto = data.get('texto')
 
     if not protocolo or not remetente or not texto:
-        print("DEBUG: Dados incompletos (protocolo, remetente, ou texto ausentes) para 'enviar_mensagem'.") # ✅ DEBUG
+        print("DEBUG: Dados incompletos (protocolo, remetente, ou texto ausentes) para 'enviar_mensagem'.")
         return
 
     chat = Chat.query.get(protocolo)
     if not chat:
-        print(f"DEBUG: Chat {protocolo} não encontrado para 'enviar_mensagem'.") # ✅ DEBUG
+        print(f"DEBUG: Chat {protocolo} não encontrado para 'enviar_mensagem'.")
         return
 
     new_message = Mensagem(chat_id=protocolo, remetente=remetente, texto=texto)
@@ -172,13 +176,14 @@ def handle_enviar_mensagem(data):
         'texto': texto,
         'data': data_formatada
     }, room=protocolo)
-    print(f"Mensagem enviada no protocolo {protocolo} de {remetente}: {texto}") # ✅ DEBUG
+    print(f"Mensagem enviada no protocolo {protocolo} de {remetente}: {texto}")
 
 if __name__ == '__main__':
-    # Use a porta fornecida pelo Render ou 5000 para desenvolvimento local
+    # ✅ MUDANÇA 3: Crie as tabelas dentro do contexto do aplicativo APENAS quando executado diretamente
+    with app.app_context():
+        db.create_all()
+        print("DEBUG: Banco de dados criado (ou já existente).")
+
     port = int(os.environ.get('PORT', 5000))
-    # No Render, esta parte NÃO será usada diretamente pelo Gunicorn.
-    # O Gunicorn iniciará sua aplicação Flask-SocketIO via o comando 'gunicorn app:socketio'.
-    # Este 'if __name__ == "__main__":' é apenas para execução local.
     print(f"DEBUG: Iniciando servidor Flask-SocketIO localmente na porta {port}")
     socketio.run(app, debug=True, host='0.0.0.0', port=port)
