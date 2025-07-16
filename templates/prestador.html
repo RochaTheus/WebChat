@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atendente - Gerenciamento de Chats</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden; /* Para evitar scroll da body */
+        }
+
+        #chat-list {
+            width: 300px; /* Largura fixa para a lista de chats */
+            border-right: 1px solid #ccc;
+            padding: 10px;
+            overflow-y: auto;
+            background-color: #f0f2f5;
+        }
+
+        #chat-window {
+            flex-grow: 1;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff;
+        }
+
+        .chat-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+
+        .chat-item:hover {
+            background-color: #e9ecef;
+        }
+
+        .chat-item.active {
+            background-color: #cfe2ff; /* Cor para chat selecionado */
+            font-weight: bold;
+        }
+        .chat-item h4 {
+            margin: 0;
+            color: #333;
+            font-size: 1em;
+        }
+        .chat-item p {
+            margin: 2px 0;
+            font-size: 0.85em;
+            color: #666;
+        }
+        .chat-item small {
+            font-size: 0.75em;
+            color: #999;
+        }
+        #messages {
+            border: 1px solid #e0e0e0;
+            background-color: #f9f9f9;
+            padding: 10px;
+            flex-grow: 1; /* Faz a área de mensagens expandir */
+            overflow-y: auto;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+        }
+        .message {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            border-radius: 15px;
+            max-width: 70%;
+            word-wrap: break-word; /* Quebra texto longo */
+        }
+
+        .message-sender {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        .message-time {
+            font-size: 0.75em;
+            color: #888;
+            margin-left: 5px;
+        }
+        .client-message {
+            background-color: #d1ecf1; /* Light blue */
+            align-self: flex-start; /* Alinha à esquerda */
+        }
+        .attendant-message {
+            background-color: #d4edda; /* Light green */
+            align-self: flex-end; /* Alinha à direita */
+        }
+        #message-form {
+            display: flex;
+            margin-top: 10px;
+        }
+        #attendant-message-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1em;
+        }
+        #send-button {
+            margin-left: 10px;
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        #send-button:hover {
+            background-color: #0056b3;
+        }
+        #current-chat-title {
+            text-align: center;
+            color: #007bff;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-list">
+        <h3>Chats Abertos</h3>
+        <ul id="open-chats">
+            <li>Carregando chats...</li>
+        </ul>
+    </div>
+
+    <div id="chat-window">
+        <h3 id="current-chat-title">Selecione um chat</h3>
+        <div id="messages">
+            </div>
+        <div id="message-input-area" style="display: none;">
+            <div id="message-form">
+                <input type="text" id="attendant-message-input" placeholder="Digite sua mensagem...">
+                <button id="send-button" onclick="sendAttendantMessage()">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let currentActiveChatProtocol = null;
+        const attendantName = "Atendente"; // Ou dinâmico, se você tiver sistema de login
+
+        // Elementos HTML
+        const openChatsList = document.getElementById('open-chats');
+        const currentChatTitle = document.getElementById('current-chat-title');
+        const messagesDiv = document.getElementById('messages');
+        const messageInputArea = document.getElementById('message-input-area');
+        const attendantMessageInput = document.getElementById('attendant-message-input');
+        const sendButton = document.getElementById('send-button');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            socket = io(); // Conecta ao Socket.IO
+
+            socket.on('connect', () => {
+                console.log('Atendente conectado ao SocketIO');
+                // Atendente entra na sala especial para receber notificações de novos chats
+                socket.emit('entrar_sala', { protocolo: 'atendente_dashboard', is_atendente: true });
+                loadOpenChats(); // Carrega os chats existentes ao conectar
+            });
+
+            socket.on('sala_entrada', (data) => {
+                console.log('Atendente entrou na sala:', data);
+            });
+
+            // Evento para quando um NOVO chat é aberto (em tempo real)
+            socket.on('novo_chat_aberto', (data) => {
+                console.log('Novo chat aberto recebido via Socket.IO:', data);
+                // A 'data' deste evento do app.py vem com: id, cliente (nome), data (data_inicio formatada)
+                // Usamos a mesma função addChatToList
+                addChatToList({
+                    id: data.id,
+                    cliente_nome: data.cliente, // Renomear para corresponder ao fetch
+                    data_inicio: data.data,     // Renomear para corresponder ao fetch
+                    ultima_mensagem: null       // Não vem com última mensagem
+                }, true); // Passa true para indicar que é um novo chat e talvez dar destaque
+            });
+
+            // Evento para quando uma NOVA mensagem chega
+            socket.on('nova_mensagem', (data) => {
+                // Se a mensagem pertence ao chat ativo, exiba-a
+                if (currentActiveChatProtocol === data.protocolo) {
+                    const messageType = data.remetente === 'cliente' ? 'client-message' : 'attendant-message';
+                    appendMessage(data.remetente, data.texto, messageType, data.data);
+                } else {
+                    // Opcional: Destaque o chat na lista se uma nova mensagem chegar para ele
+                    console.log(`Nova mensagem para chat ${data.protocolo} (não ativo)`);
+                    const chatItem = document.querySelector(`.chat-item[data-protocolo="${data.protocolo}"]`);
+                    if (chatItem && !chatItem.classList.contains('active')) {
+                        chatItem.style.backgroundColor = '#ffedcc'; // Exemplo de destaque
+                    }
+                }
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Atendente desconectado do SocketIO');
+            });
+
+            // Adicionar listener para a tecla Enter no campo de mensagem
+            attendantMessageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendButton.click(); // Simula o clique no botão de enviar
+                }
+            });
+        });
+
+        // Função para carregar todos os chats abertos do backend (do DB)
+        async function loadOpenChats() {
+            try {
+                // Faz a requisição para a nova rota /chats_abertos no Flask
+                const response = await fetch('/chats_abertos');
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP! status: ${response.status}`);
+                }
+                const data = await response.json();
+
+                openChatsList.innerHTML = ''; // Limpa a lista existente
+
+                if (data.status === 'success' && data.chats.length > 0) {
+                    data.chats.forEach(chat => addChatToList(chat, false)); // 'false' para não dar destaque de novo
+                } else {
+                    openChatsList.innerHTML = '<li>Nenhum chat aberto no momento.</li>';
+                }
+            } catch (error) {
+                console.error('Erro ao carregar chats abertos:', error);
+                openChatsList.innerHTML = '<li>Erro ao carregar chats. Tente novamente.</li>';
+            }
+        }
+
+        // Função para adicionar um chat à lista na UI
+        function addChatToList(chatData, isNew = false) {
+            const listItem = document.createElement('li');
+            listItem.classList.add('chat-item');
+            if (isNew) {
+                listItem.classList.add('new-chat-highlight'); // Adiciona uma classe para destaque visual temporário
+                // Remove o destaque após alguns segundos
+                setTimeout(() => {
+                    listItem.classList.remove('new-chat-highlight');
+                    listItem.style.backgroundColor = ''; // Remove a cor de fundo temporária
+                }, 5000);
+            }
+            listItem.dataset.protocolo = chatData.id;
+
+            // Ajuste aqui para usar 'cliente_nome' e 'data_inicio' que vêm do /chats_abertos
+            // Ou 'cliente' e 'data' se for do evento novo_chat_aberto
+            const clienteNome = chatData.cliente_nome || chatData.cliente;
+            const dataInicio = chatData.data_inicio || chatData.data;
+
+            let ultimaMensagemHtml = '';
+            if (chatData.ultima_mensagem && chatData.ultima_mensagem.texto) {
+                ultimaMensagemHtml = `<p>Última: ${chatData.ultima_mensagem.remetente}: ${chatData.ultima_mensagem.texto.substring(0, 30)}${chatData.ultima_mensagem.texto.length > 30 ? '...' : ''}</p>`;
+            }
+
+            listItem.innerHTML = `
+                <h4>${clienteNome}</h4>
+                <p>Protocolo: ${chatData.id}</p>
+                <small>Início: ${dataInicio}</small>
+                ${ultimaMensagemHtml}
+            `;
+            listItem.onclick = () => selectChat(chatData.id);
+            openChatsList.prepend(listItem); // Adiciona no início para novos chats aparecerem primeiro
+        }
+
+        // Função para selecionar um chat e carregar seu histórico
+        async function selectChat(protocolo) {
+            // Remove 'active' da lista anterior
+            const prevItem = document.querySelector(`.chat-item.active`);
+            if (prevItem) prevItem.classList.remove('active');
+
+            // Adiciona 'active' ao item clicado
+            const selectedItem = document.querySelector(`.chat-item[data-protocolo="${protocolo}"]`);
+            if (selectedItem) {
+                selectedItem.classList.add('active');
+                selectedItem.style.backgroundColor = ''; // Remove qualquer destaque de nova mensagem
+            }
+
+            currentActiveChatProtocol = protocolo;
+            currentChatTitle.textContent = `Chat - Protocolo: ${protocolo}`;
+            messagesDiv.innerHTML = ''; // Limpa mensagens anteriores
+            messageInputArea.style.display = 'block'; // Mostra a área de input
+
+            // Atendente entra na sala do chat específico para enviar/receber mensagens
+            if (socket) {
+                socket.emit('entrar_sala', { protocolo: protocolo, is_atendente: true });
+            }
+
+            // Carrega o histórico do chat
+            try {
+                const response = await fetch(`/buscar_chat/${protocolo}`);
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP! status: ${response.status}`);
+                }
+                const data = await response.json();
+
+                if (data.status === 'error') {
+                    appendMessage('Sistema', data.message, 'system-message');
+                    return;
+                }
+
+                data.mensagens.forEach(msg => {
+                    // 'cliente' vs 'prestador' (seu app.py)
+                    const messageType = msg.remetente.toLowerCase() === 'cliente' ? 'client-message' : 'attendant-message';
+                    appendMessage(msg.remetente, msg.texto, messageType, msg.data);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar histórico do chat:', error);
+                appendMessage('Sistema', 'Erro ao carregar mensagens do chat.', 'system-message');
+            }
+        }
+
+        // Função para enviar mensagem do atendente
+        function sendAttendantMessage() {
+            const messageText = attendantMessageInput.value.trim();
+
+            if (messageText && currentActiveChatProtocol && socket) {
+                socket.emit('enviar_mensagem', {
+                    protocolo: currentActiveChatProtocol,
+                    remetente: 'prestador', // Alterado de 'atendente' para 'prestador' para consistência
+                    texto: messageText
+                });
+                attendantMessageInput.value = ''; // Limpa o input após enviar
+            }
+        }
+
+        // Função auxiliar para adicionar mensagens ao div de mensagens
+        function appendMessage(sender, text, type, time) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', type);
+            // Ajuste para exibir a hora se ela vier formatada, senão pega a atual
+            const displayTime = time || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            
+            messageElement.innerHTML = `
+                <span class="message-sender">${sender}</span>
+                <span class="message-time">(${displayTime})</span>: 
+                ${text}
+            `;
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Rola para o final
+        }
+    </script>
+</body>
+</html>

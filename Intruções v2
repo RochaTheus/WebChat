@@ -1,0 +1,19 @@
+/CHAT
+├── /static
+│   └── script.js
+├── /templates
+│   ├── cliente.html
+│   └── prestador.html
+├── database.py      # Novo arquivo para configuração do banco
+├── models.py        # Novo arquivo para modelos SQL
+├── app.py
+└── style.css
+
+Inicie o servidor:
+
+    bash
+        python app.py
+
+    Acesse:
+        Cliente: http://localhost:5000
+        Prestador: http://localhost:5000/prestador
