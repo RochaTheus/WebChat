@@ -133,4 +133,52 @@ def handle_entrar_sala(data):
 
     chat = Chat.query.get(protocolo)
     if not chat and protocolo != 'atendente_dashboard': # 'atendente_dashboard' é uma sala especial, não um chat
-        emit('sala_entrada', {'status': 'error', 'message': 'Chat não encontrado
+        # ✅ ERRO CORRIGIDO: A string 'Chat não encontrado.' agora está devidamente fechada.
+        emit('sala_entrada', {'status': 'error', 'message': 'Chat não encontrado.'}) 
+        print(f"DEBUG: Chat {protocolo} não encontrado para 'entrar_sala'.") # ✅ DEBUG
+        return
+
+    join_room(protocolo)
+    print(f"[{request.sid}] {'Prestador' if is_atendente else 'Cliente'} entrou na sala: {protocolo}")
+    emit('sala_entrada', {'status': 'success', 'protocolo': protocolo}, room=request.sid)
+
+@socketio.on('enviar_mensagem')
+def handle_enviar_mensagem(data):
+    # ✅ DEBUG: Adicionado print para verificar o evento de envio de mensagem
+    print(f"DEBUG: Evento 'enviar_mensagem' recebido. Dados: {data}")
+
+    protocolo = data.get('protocolo')
+    remetente = data.get('remetente')
+    texto = data.get('texto')
+
+    if not protocolo or not remetente or not texto:
+        print("DEBUG: Dados incompletos (protocolo, remetente, ou texto ausentes) para 'enviar_mensagem'.") # ✅ DEBUG
+        return
+
+    chat = Chat.query.get(protocolo)
+    if not chat:
+        print(f"DEBUG: Chat {protocolo} não encontrado para 'enviar_mensagem'.") # ✅ DEBUG
+        return
+
+    new_message = Mensagem(chat_id=protocolo, remetente=remetente, texto=texto)
+    db.session.add(new_message)
+    db.session.commit()
+
+    data_formatada = new_message.data_hora.astimezone(pytz.timezone("America/Sao_Paulo")).strftime('%H:%M:%S')
+
+    emit('nova_mensagem', {
+        'protocolo': protocolo,
+        'remetente': remetente,
+        'texto': texto,
+        'data': data_formatada
+    }, room=protocolo)
+    print(f"Mensagem enviada no protocolo {protocolo} de {remetente}: {texto}") # ✅ DEBUG
+
+if __name__ == '__main__':
+    # Use a porta fornecida pelo Render ou 5000 para desenvolvimento local
+    port = int(os.environ.get('PORT', 5000))
+    # No Render, esta parte NÃO será usada diretamente pelo Gunicorn.
+    # O Gunicorn iniciará sua aplicação Flask-SocketIO via o comando 'gunicorn app:socketio'.
+    # Este 'if __name__ == "__main__":' é apenas para execução local.
+    print(f"DEBUG: Iniciando servidor Flask-SocketIO localmente na porta {port}")
+    socketio.run(app, debug=True, host='0.0.0.0', port=port)
