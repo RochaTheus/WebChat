@@ -1,4 +1,9 @@
-// Elementos do DOM
+// A URL do seu serviço de backend Flask no Render
+// SUBSTITUA PELA URL REAL DO SEU BACKEND FLASK NO RENDER!
+// Exemplo: 'https://seu-backend-flask.onrender.com'
+const BACKEND_URL = 'https://sua-url-do-backend-no-render.onrender.com'; // <<<<< MUDANÇA MAIS IMPORTANTE AQUI!
+
+// Elementos do DOM (mantidos iguais, exceto se houver mudanças no HTML)
 const elements = {
     // Cliente
     cliente: {
@@ -9,7 +14,6 @@ const elements = {
 
         formAcesso: document.getElementById('form-acesso-cliente'), // Formulário de acesso
         protocoloAcessoInput: document.getElementById('protocolo-acesso-cliente'), // Input de protocolo
-        // Removidos: nomeAcessoInput, emailAcessoInput
         acessarBtn: document.getElementById('acessar-chat-cliente-btn'), // Botão de acesso
 
         chatArea: document.getElementById('chat-area-cliente'),
@@ -20,7 +24,7 @@ const elements = {
         enviarBtn: document.getElementById('enviar-btn-cliente')
     },
 
-    // Prestador (sem alterações)
+    // Prestador
     prestador: {
         formAcesso: document.getElementById('form-acesso-prestador'),
         protocoloInput: document.getElementById('protocolo-input'),
@@ -34,30 +38,45 @@ const elements = {
     }
 };
 
-// Variáveis globais (sem alterações)
+// Variáveis globais
 let socket;
 let currentProtocol = null;
 let userType = null;
 let userName = null;
 
-// Funções compartilhadas (sem alterações)
+// Funções compartilhadas
 function setupSocket() {
-    socket = io();
+    // ✅ MUDANÇA AQUI: Passa a URL explícita do backend para o Socket.IO
+    socket = io(BACKEND_URL); 
 
     socket.on('nova_mensagem', (data) => {
-        if (currentProtocol === data.protocolo || userType === 'cliente') {
+        // Correção de lógica: garantir que 'prestador' veja todas as msgs no dashboard
+        // E apenas as do chat ativo na tela do chat.
+        if (userType === 'prestador') {
+            // Se o prestador está na sala do chat (currentProtocol definido)
+            if (currentProtocol && currentProtocol === data.protocolo) {
+                addMessage(data.remetente, data.texto, data.data);
+            }
+            // Se não, é uma nova mensagem para um chat não ativo.
+            // Poderia atualizar o dashboard ou exibir uma notificação.
+            // No seu código original, ele apenas logava. Isso está ok.
+            else {
+                 console.log(`Nova mensagem para o protocolo ${data.protocolo} (chat não ativo para o prestador)`);
+            }
+        } else if (userType === 'cliente' && currentProtocol === data.protocolo) {
+            // Cliente só vê mensagens do seu próprio chat ativo
             addMessage(data.remetente, data.texto, data.data);
-        } else if (userType === 'prestador') {
-            console.log(`Nova mensagem para o protocolo ${data.protocolo} (chat não ativo)`);
         }
     });
 
     socket.on('connect', () => {
         console.log(`Conectado ao SocketIO como ${userType}.`);
         if (currentProtocol) {
+            // Re-emitir 'entrar_sala' ao reconectar, se já estiver em um chat
             socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: (userType === 'prestador') });
         }
         if (userType === 'prestador') {
+            // O prestador sempre entra na sala de dashboard para receber notificações de novos chats
             socket.emit('entrar_sala', { protocolo: 'atendente_dashboard', is_atendente: true });
         }
     });
@@ -72,12 +91,22 @@ function setupSocket() {
     if (userType === 'prestador') {
         socket.on('novo_chat_aberto', (data) => {
             console.log('Novo chat aberto recebido:', data);
-            alert(`Novo chat aberto! Cliente: ${data.cliente}, Protocolo: ${data.id}`);
+            // ✅ Melhorar notificação do prestador
+            const notificationSound = new Audio('/static/notification.mp3'); // Assumindo que você tem um som
+            notificationSound.play();
+            alert(`Novo chat aberto! Cliente: ${data.cliente}, Protocolo: ${data.id}. Por favor, acesse o painel de chats abertos para atender.`);
+            // Você pode adicionar lógica aqui para atualizar a lista de chats abertos no painel do prestador
         });
     }
 
     socket.on('disconnect', () => {
         console.log('Desconectado do SocketIO');
+    });
+
+    socket.on('connect_error', (err) => {
+        console.error('Erro de conexão do SocketIO:', err);
+        // ✅ Adicionar feedback visual ou log mais detalhado para o usuário
+        alert('Erro ao conectar ao servidor de chat. Por favor, tente recarregar a página. Detalhes: ' + err.message);
     });
 }
 
@@ -87,10 +116,17 @@ function addMessage(sender, text, time) {
         : elements.prestador.chatMessages;
 
     const messageDiv = document.createElement('div');
-    const messageClass = (sender === 'cliente') ? 'client-message' : 'attendant-message';
+    // ✅ Melhorar a exibição do remetente
+    const displaySender = (sender === 'cliente' && userType === 'cliente') ? 'Você' :
+                          (sender === 'prestador' && userType === 'prestador') ? 'Você' :
+                          sender;
+
+    // Use a classe 'self-message' para mensagens do próprio usuário e 'other-message' para as do outro
+    const messageClass = (sender === userType) ? 'self-message' : 'other-message';
+    
     messageDiv.className = `message ${messageClass}`;
     messageDiv.innerHTML = `
-        <span class="message-sender">${sender}</span>
+        <span class="message-sender">${displaySender}</span>
         <span class="message-time">${time}</span>
         <div class="message-text">${text}</div>
     `;
@@ -107,22 +143,28 @@ function sendMessage() {
 
     const text = input.value.trim();
 
-    if (text && currentProtocol && socket) {
+    if (text && currentProtocol && socket && socket.connected) { // ✅ Adicionado socket.connected
         socket.emit('enviar_mensagem', {
             protocolo: currentProtocol,
-            remetente: userType,
+            remetente: userType, // Isso enviará 'cliente' ou 'prestador' como remetente
             texto: text
         });
         input.value = '';
+    } else {
+        console.warn('Não foi possível enviar a mensagem. Texto vazio, protocolo ausente ou socket desconectado.');
+        // ✅ Feedback ao usuário, se o socket não estiver conectado
+        if (!socket || !socket.connected) {
+            alert('Você não está conectado ao chat. Por favor, tente novamente ou recarregue a página.');
+        }
     }
 }
 
-function loadChatHistory(protocolo, clienteNomeFromBackend, clienteEmailFromBackend) {
+function loadChatHistory(protocolo, clienteNomeFromBackend = null, clienteEmailFromBackend = null) {
     if (userType === 'cliente' && clienteNomeFromBackend) {
-        userName = clienteNomeFromBackend;
+        userName = clienteNomeFromBackend; // Define o nome do cliente se for um novo chat
     }
 
-    fetch(`/buscar_chat/${protocolo}`)
+    return fetch(`${BACKEND_URL}/buscar_chat/${protocolo}`) // ✅ MUDANÇA AQUI: Usa BACKEND_URL
     .then(response => {
         if (!response.ok) {
             return response.json().then(errorData => {
@@ -137,17 +179,25 @@ function loadChatHistory(protocolo, clienteNomeFromBackend, clienteEmailFromBack
             elements.cliente.protocoloDisplay.textContent = protocolo;
             elements.cliente.chatMessages.innerHTML = '';
             data.mensagens.forEach(msg => {
-                addMessage(msg.remetente, msg.texto, msg.data); // ✅ Correto agora
+                addMessage(msg.remetente, msg.texto, msg.data);
             });
 
             elements.cliente.formInicio.style.display = 'none';
             elements.cliente.formAcesso.style.display = 'none';
             elements.cliente.chatArea.style.display = 'block';
 
-            if (!socket.connected) {
-                setupSocket();
-            } else {
+            // Garante que o socket está pronto e entra na sala
+            if (!socket || !socket.connected) { // Verifica se o socket não existe ou está desconectado
+                 setupSocket(); // Inicializa ou reinicializa
+            }
+            // Aguarda a conexão antes de emitir, ou emite se já conectado
+            if (socket.connected) {
                 socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: false });
+            } else {
+                // Se ainda não conectou, espera o evento 'connect' para entrar na sala
+                socket.on('connect', () => {
+                    socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: false });
+                });
             }
         }
         else if (userType === 'prestador') {
@@ -155,11 +205,24 @@ function loadChatHistory(protocolo, clienteNomeFromBackend, clienteEmailFromBack
             elements.prestador.protocoloDisplay.textContent = protocolo;
             elements.prestador.chatMessages.innerHTML = '';
             data.mensagens.forEach(msg => {
-                addMessage(msg.remetente, msg.texto, msg.data); // ✅ Correto aqui também
+                addMessage(msg.remetente, msg.texto, msg.data);
             });
 
             elements.prestador.formAcesso.style.display = 'none';
             elements.prestador.chatArea.style.display = 'block';
+
+            // Garante que o socket está pronto e entra na sala
+            if (!socket || !socket.connected) { // Verifica se o socket não existe ou está desconectado
+                 setupSocket(); // Inicializa ou reinicializa
+            }
+            // Aguarda a conexão antes de emitir, ou emite se já conectado
+            if (socket.connected) {
+                socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: true });
+            } else {
+                socket.on('connect', () => {
+                    socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: true });
+                });
+            }
         }
     })
     .catch(error => {
@@ -168,7 +231,12 @@ function loadChatHistory(protocolo, clienteNomeFromBackend, clienteEmailFromBack
         if (userType === 'prestador' && elements.prestador.formAcesso) {
             elements.prestador.chatArea.style.display = 'none';
             elements.prestador.formAcesso.style.display = 'block';
+        } else if (userType === 'cliente') { // Para o cliente, mostrar os forms de início/acesso novamente
+            elements.cliente.formInicio.style.display = 'block';
+            elements.cliente.formAcesso.style.display = 'block';
+            elements.cliente.chatArea.style.display = 'none';
         }
+        throw error; // Propaga o erro para o catch externo
     });
 }
 
@@ -176,9 +244,10 @@ function loadChatHistory(protocolo, clienteNomeFromBackend, clienteEmailFromBack
 document.addEventListener('DOMContentLoaded', () => {
     if (elements.cliente.formInicio) {
         userType = 'cliente';
-        setupSocket(); // Inicializa o socket
+        // ✅ Inicializa o socket APENAS ao entrar em um chat ou iniciar um novo
+        // setupSocket(); // Removido daqui
 
-        // Listener para Iniciar Novo Chat (sem alterações)
+        // Listener para Iniciar Novo Chat
         elements.cliente.iniciarBtn.addEventListener('click', () => {
             userName = elements.cliente.nomeInput.value.trim();
             const userEmail = elements.cliente.emailInput.value.trim();
@@ -187,8 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Por favor, preencha seu nome e email para iniciar um novo chat.');
                 return;
             }
-
-            fetch('/iniciar_chat', {
+            
+            // ✅ MUDANÇA AQUI: Usa BACKEND_URL para o fetch
+            fetch(`${BACKEND_URL}/iniciar_chat`, { 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -200,12 +270,10 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(data => {
                 if (data.status === 'chat_iniciado') {
                     currentProtocol = data.protocolo;
-                    elements.cliente.formInicio.style.display = 'none';
-                    elements.cliente.formAcesso.style.display = 'none'; // Esconde o form de acesso também
-                    elements.cliente.chatArea.style.display = 'block';
-
-                    socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: false });
-                    loadChatHistory(currentProtocol, data.nome, data.email); // Passa nome e email retornados
+                    // Chame setupSocket ANTES de loadChatHistory para garantir que o socket está pronto
+                    setupSocket(); 
+                    loadChatHistory(currentProtocol, data.nome, data.email);
+                    // O display dos elementos será manipulado dentro de loadChatHistory
                 } else {
                     alert('Erro ao iniciar chat: ' + (data.message || 'Erro desconhecido'));
                 }
@@ -216,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Listener para Acessar Chat Existente por Protocolo (MODIFICADA)
+        // Listener para Acessar Chat Existente por Protocolo
         elements.cliente.acessarBtn.addEventListener('click', () => {
             const protocoloAcesso = elements.cliente.protocoloAcessoInput.value.trim();
 
@@ -225,12 +293,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            currentProtocol = protocoloAcesso; // Define o protocolo atual para o socket
+            currentProtocol = protocoloAcesso;
 
-            // Usa o endpoint /buscar_chat que já existe para buscar por protocolo
+            // Chame setupSocket ANTES de loadChatHistory para garantir que o socket está pronto
+            setupSocket();
             loadChatHistory(currentProtocol)
             .then(() => {
-                // userName já será definido dentro de loadChatHistory com o nome do cliente do chat
+                // userName será definido dentro de loadChatHistory com o nome do cliente do chat
                 // Formulários já são escondidos dentro de loadChatHistory
             })
             .catch(error => {
@@ -243,18 +312,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Event listeners for sending messages (sem alterações)
+        // Event listeners for sending messages
         elements.cliente.enviarBtn.addEventListener('click', sendMessage);
         elements.cliente.mensagemInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
     }
 
-    // Lógica do Prestador (sem alterações)
+    // Lógica do Prestador
     if (elements.prestador.formAcesso) {
         userType = 'prestador';
         userName = 'Atendente';
-        setupSocket();
+        setupSocket(); // ✅ Mantenha setupSocket aqui, pois o prestador precisa dele para o dashboard
 
         elements.prestador.acessarBtn.addEventListener('click', () => {
             currentProtocol = elements.prestador.protocoloInput.value.trim();
@@ -264,15 +333,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // O socket já deve estar conectado por causa do setupSocket() inicial do prestador
+            // (que entra na sala 'atendente_dashboard').
+            // Agora, ele entra na sala específica do chat.
             socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: true });
 
             loadChatHistory(currentProtocol)
             .then(() => {
-                elements.prestador.formAcesso.style.display = 'none';
-                elements.prestador.chatArea.style.display = 'block';
+                // Elementos de display já são manipulados em loadChatHistory
             })
             .catch(error => {
                 console.error("Erro ao carregar chat ou acessar sala:", error);
+                // Se houver erro, garante que os forms apareçam novamente
+                elements.prestador.formAcesso.style.display = 'block';
+                elements.prestador.chatArea.style.display = 'none';
             });
         });
 
