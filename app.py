@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from models import db, Chat, Mensagem
+from flask_cors import CORS
 from datetime import datetime
 import pytz  # ✅ Adicionado para ajuste de fuso
 
@@ -10,7 +11,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = 'sua_chave_secreta_aqui'
 
 db.init_app(app)
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="https://webchat-8xbq.onrender.com")
 
 with app.app_context():
     db.create_all()
@@ -160,4 +161,9 @@ def handle_enviar_mensagem(data):
     print(f"Mensagem no protocolo {protocolo} de {remetente}: {texto}")
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+    import os
+    # Use a porta fornecida pelo Render ou 5000 para desenvolvimento local
+    port = int(os.environ.get('PORT', 5000))
+    # 'allow_unsafe_werkzeug=True' é útil para desenvolvimento, mas
+    # em produção com Gunicorn, isso não é usado.
+    socketio.run(app, debug=True, host='0.0.0.0', port=port) # ✅ Adicionado host='0.0.0.0' e port
