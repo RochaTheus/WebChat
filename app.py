@@ -1,16 +1,26 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from models import db, Chat, Mensagem
-from flask_cors import CORS
+from flask_cors import CORS # ✅ Importe a extensão Flask-CORS
 from datetime import datetime
-import pytz  # ✅ Adicionado para ajuste de fuso
+import pytz
+import os # ✅ Importe o módulo os para variáveis de ambiente
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = 'sua_chave_secreta_aqui'
 
-db.init_app(app)
+# ✅ Configuração do CORS para o objeto 'app'
+# Esta linha é crucial para as requisições HTTP regulares (como iniciar_chat, buscar_chat, etc.)
+# Substitua 'https://webchat-8xbq.onrender.com' pela URL REAL do seu frontend no Render.
+# Se houver mais de uma URL de frontend, use uma lista:
+# CORS(app, resources={r"/*": {"origins": ["https://webchat-8xbq.onrender.com", "https://outra-url-frontend.onrender.com"]}})
+CORS(app, resources={r"/*": {"origins": "https://webchat-8xbq.onrender.com"}})
+
+
+# ✅ Flask-SocketIO com configuração de CORS
+# 'cors_allowed_origins' deve ser o mesmo que você configurou acima para o CORS geral.
 socketio = SocketIO(app, cors_allowed_origins="https://webchat-8xbq.onrender.com")
 
 with app.app_context():
@@ -33,7 +43,6 @@ def iniciar_chat():
     if not nome or not email:
         return jsonify({'status': 'error', 'message': 'Nome e email são obrigatórios'}), 400
 
-    # ✅ Corrigido para hora de Brasília
     now = datetime.now(pytz.timezone("America/Sao_Paulo"))
     protocolo_gerado = now.strftime('%d%m%y%H%M%S')
 
@@ -48,7 +57,7 @@ def iniciar_chat():
     socketio.emit('novo_chat_aberto', {
         'id': new_chat.id,
         'cliente': new_chat.cliente_nome,
-        'data': new_chat.data_inicio.astimezone(pytz.timezone("America/Sao_Paulo")).strftime('%Y-%m-%d %H:%M:%S')  # ✅ Conversão da data
+        'data': new_chat.data_inicio.astimezone(pytz.timezone("America/Sao_Paulo")).strftime('%Y-%m-%d %H:%M:%S')
     }, room='atendente_dashboard')
 
     return jsonify({
@@ -67,7 +76,7 @@ def buscar_chat(protocolo):
     mensagens_data = [{
         'remetente': msg.remetente,
         'texto': msg.texto,
-        'data': msg.data_hora.astimezone(pytz.timezone("America/Sao_Paulo")).strftime('%H:%M:%S')  # ✅ Corrigido
+        'data': msg.data_hora.astimezone(pytz.timezone("America/Sao_Paulo")).strftime('%H:%M:%S')
     } for msg in chat.mensagens]
 
     return jsonify({
@@ -80,17 +89,12 @@ def buscar_chat(protocolo):
 @app.route('/chats_abertos', methods=['GET'])
 def get_chats_abertos():
     try:
-        # Busca todos os chats com status 'aberto'
-        # Você pode ajustar a query para ordenar por data_inicio, etc.
         chats_abertos = Chat.query.filter_by(status='aberto').order_by(Chat.data_inicio.asc()).all()
 
         chats_data = []
         for chat in chats_abertos:
-            # Pega a última mensagem para dar um contexto rápido
             ultima_mensagem = None
-            if chat.mensagens: # Verifica se existem mensagens
-                # Ordena as mensagens por data_hora descendente e pega a primeira (mais recente)
-                # Ou usa o order_by definido no relationship se estiver confiável
+            if chat.mensagens:
                 mensagens_ordenadas = sorted(chat.mensagens, key=lambda msg: msg.data_hora, reverse=True)
                 if mensagens_ordenadas:
                     ultima_mensagem = {
@@ -119,51 +123,14 @@ def handle_entrar_sala(data):
     protocolo = data.get('protocolo')
     is_atendente = data.get('is_atendente', False)
 
+    # ✅ DEBUG: Adicionado print para verificar o evento de entrada na sala
+    print(f"DEBUG: Evento 'entrar_sala' recebido. Protocolo: {protocolo}, Atendente: {is_atendente}")
+
     if not protocolo:
         emit('sala_entrada', {'status': 'error', 'message': 'Protocolo ausente.'})
+        print("DEBUG: Protocolo ausente para 'entrar_sala'.") # ✅ DEBUG
         return
 
     chat = Chat.query.get(protocolo)
-    if not chat and protocolo != 'atendente_dashboard':
-        emit('sala_entrada', {'status': 'error', 'message': 'Chat não encontrado.'})
-        return
-
-    join_room(protocolo)
-    print(f"[{request.sid}] {'Prestador' if is_atendente else 'Cliente'} entrou na sala: {protocolo}")
-    emit('sala_entrada', {'status': 'success', 'protocolo': protocolo}, room=request.sid)
-
-@socketio.on('enviar_mensagem')
-def handle_enviar_mensagem(data):
-    protocolo = data.get('protocolo')
-    remetente = data.get('remetente')
-    texto = data.get('texto')
-
-    if not protocolo or not remetente or not texto:
-        return
-
-    chat = Chat.query.get(protocolo)
-    if not chat:
-        return
-
-    new_message = Mensagem(chat_id=protocolo, remetente=remetente, texto=texto)
-    db.session.add(new_message)
-    db.session.commit()
-
-    # ✅ Ajuste para mostrar horário corretamente
-    data_formatada = new_message.data_hora.astimezone(pytz.timezone("America/Sao_Paulo")).strftime('%H:%M:%S')
-
-    emit('nova_mensagem', {
-        'protocolo': protocolo,
-        'remetente': remetente,
-        'texto': texto,
-        'data': data_formatada
-    }, room=protocolo)
-    print(f"Mensagem no protocolo {protocolo} de {remetente}: {texto}")
-
-if __name__ == '__main__':
-    import os
-    # Use a porta fornecida pelo Render ou 5000 para desenvolvimento local
-    port = int(os.environ.get('PORT', 5000))
-    # 'allow_unsafe_werkzeug=True' é útil para desenvolvimento, mas
-    # em produção com Gunicorn, isso não é usado.
-    socketio.run(app, debug=True, host='0.0.0.0', port=port) # ✅ Adicionado host='0.0.0.0' e port
+    if not chat and protocolo != 'atendente_dashboard': # 'atendente_dashboard' é uma sala especial, não um chat
+        emit('sala_entrada', {'status': 'error', 'message': 'Chat não encontrado
