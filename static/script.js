@@ -1,7 +1,7 @@
 // A URL do seu serviço de backend Flask no Render
 // IMPORTANTE: SUBSTITUA 'https://SUA-URL-DO-BACKEND.onrender.com' PELA URL REAL DO SEU BACKEND FLASK NO RENDER!
 // Exemplo: 'https://meu-chat-backend.onrender.com'
-const BACKEND_URL = 'https://SUA-URL-DO-BACKEND.onrender.com'; 
+const BACKEND_URL = 'https://webchat-8xbq.onrender.com'; 
 
 // Elementos do DOM
 const elements = {
