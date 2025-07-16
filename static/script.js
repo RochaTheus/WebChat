@@ -247,4 +247,75 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.status === 'chat_iniciado') {
                     currentProtocol = data.protocolo;
                     setupSocket(); 
-                    loadChatHistory
+                    loadChatHistory(currentProtocol, data.nome, data.email);
+                } else {
+                    alert('Erro ao iniciar chat: ' + (data.message || 'Erro desconhecido'));
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao iniciar chat:', error);
+                alert('Erro ao conectar com o servidor para iniciar o chat.');
+            });
+        });
+
+        elements.cliente.acessarBtn.addEventListener('click', () => {
+            const protocoloAcesso = elements.cliente.protocoloAcessoInput.value.trim();
+
+            if (!protocoloAcesso) {
+                alert('Por favor, digite o protocolo do chat para acessá-lo.');
+                return;
+            }
+
+            currentProtocol = protocoloAcesso;
+
+            setupSocket();
+            loadChatHistory(currentProtocol)
+            .then(() => {
+            })
+            .catch(error => {
+                console.error('Erro ao acessar chat existente:', error);
+                alert('Erro ao acessar chat: ' + error.message);
+                elements.cliente.formInicio.style.display = 'block';
+                elements.cliente.formAcesso.style.display = 'block';
+                elements.cliente.chatArea.style.display = 'none';
+            });
+        });
+
+        elements.cliente.enviarBtn.addEventListener('click', sendMessage);
+        elements.cliente.mensagemInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    }
+
+    // Lógica do Prestador
+    if (elements.prestador.formAcesso) {
+        userType = 'prestador';
+        userName = 'Atendente';
+        setupSocket(); 
+
+        elements.prestador.acessarBtn.addEventListener('click', () => {
+            currentProtocol = elements.prestador.protocoloInput.value.trim();
+
+            if (!currentProtocol) {
+                alert('Por favor, digite o protocolo do chat.');
+                return;
+            }
+
+            socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: true });
+
+            loadChatHistory(currentProtocol)
+            .then(() => {
+            })
+            .catch(error => {
+                console.error("Erro ao carregar chat ou acessar sala:", error);
+                elements.prestador.formAcesso.style.display = 'block';
+                elements.prestador.chatArea.style.display = 'none';
+            });
+        });
+
+        elements.prestador.enviarBtn.addEventListener('click', sendMessage);
+        elements.prestador.mensagemInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    }
+});
