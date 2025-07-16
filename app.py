@@ -1,37 +1,21 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
-from models import db, Chat, Mensagem # Importe 'db' de 'models'
+from models import db, Chat, Mensagem 
 from flask_cors import CORS 
 from datetime import datetime
 import pytz
 import os 
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db' # Mantenha a configuração aqui
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db' 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.secret_key = 'sua_chave_secreta_aqui' # Lembre-se de usar uma chave secreta forte em produção!
+app.secret_key = 'sua_chave_secreta_aqui' 
 
-# ✅ MUDANÇA 1: Inicialize db COM o app
-# Mova esta linha para APÓS a criação do objeto 'app'
 db.init_app(app) 
 
-# ✅ Configuração do CORS para o objeto 'app'
-# Substitua 'https://webchat-8xbq.onrender.com' pela URL REAL do seu frontend no Render.
-# Se houver mais de uma URL de frontend, use uma lista:
-# CORS(app, resources={r"/*": {"origins": ["https://webchat-8xbq.onrender.com", "https://outra-url-frontend.onrender.com"]}})
 CORS(app, resources={r"/*": {"origins": "https://webchat-8xbq.onrender.com"}})
 
-
-# ✅ Flask-SocketIO com configuração de CORS
 socketio = SocketIO(app, cors_allowed_origins="https://webchat-8xbq.onrender.com")
-
-# ✅ MUDANÇA 2: Mova db.create_all() para DENTRO do if __name__ == '__main__':
-# Ele só deve ser executado quando o script é chamado diretamente para fins de desenvolvimento/configuração
-# E não quando o Gunicorn importa o aplicativo.
-# Removido:
-# with app.app_context():
-#     db.create_all()
-
 
 @app.route('/')
 def index_cliente():
@@ -122,7 +106,7 @@ def get_chats_abertos():
         return jsonify({'status': 'success', 'chats': chats_data}), 200
 
     except Exception as e:
-        print(f"Erro ao buscar chats abertos: {e}")
+        print(f"Erro ao buscar chats abertos: {e}") 
         return jsonify({'status': 'error', 'message': 'Erro ao buscar chats abertos.'}), 500
 
 @socketio.on('entrar_sala')
@@ -179,7 +163,6 @@ def handle_enviar_mensagem(data):
     print(f"Mensagem enviada no protocolo {protocolo} de {remetente}: {texto}")
 
 if __name__ == '__main__':
-    # ✅ MUDANÇA 3: Crie as tabelas dentro do contexto do aplicativo APENAS quando executado diretamente
     with app.app_context():
         db.create_all()
         print("DEBUG: Banco de dados criado (ou já existente).")
