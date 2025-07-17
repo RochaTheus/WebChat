@@ -2,31 +2,29 @@ const BACKEND_URL = window.location.origin; // Usa a URL base do seu app Render
 let socket;
 let currentProtocol = null;
 let userName = '';
-let userType = ''; // 'cliente' ou 'prestador' (embora aqui seja sempre 'cliente' para este HTML)
+let userType = ''; // 'cliente' ou 'prestador' (neste caso, sempre 'cliente')
 
 // Mapeamento de elementos do DOM para facilitar o acesso
-// AJUSTADO PARA OS IDS DO SEU HTML DE CLIENTE
+// AJUSTADO PARA OS IDS DO SEU HTML DE CLIENTE E PARA GARANTIR BOTÕES FUNCIONANDO
 const elements = {
     cliente: {
-        formInicio: document.getElementById('form-inicio-cliente'), // AJUSTADO
+        formInicio: document.getElementById('form-inicio-cliente'),
         nomeInput: document.getElementById('nome-cliente'),
         emailInput: document.getElementById('email-cliente'),
-        iniciarBtn: document.getElementById('iniciar-chat-btn'),
-        formAcesso: document.getElementById('form-acesso-cliente'), // AJUSTADO
-        protocoloInput: document.getElementById('protocolo-acesso-cliente'), // AJUSTADO
-        acessarBtn: document.getElementById('acessar-chat-cliente-btn'),
+        iniciarBtn: document.getElementById('iniciar-chat-btn'), // ID no seu HTML
+        formAcesso: document.getElementById('form-acesso-cliente'),
+        protocoloInput: document.getElementById('protocolo-acesso-cliente'), // ID no seu HTML
+        acessarBtn: document.getElementById('acessar-chat-cliente-btn'), // ID no seu HTML
         chatArea: document.getElementById('chat-area-cliente'),
         protocoloDisplay: document.getElementById('protocolo-cliente'), // ID para exibir o protocolo no chat-area
         nomeDisplay: document.getElementById('nome-display-cliente') // ID para exibir o nome no chat-area
     },
-    // Removendo o objeto 'prestador' pois este HTML é apenas para o cliente
-    // Removendo o objeto 'dashboard' pois este HTML é apenas para o cliente
+    // Removendo objetos 'prestador' e 'dashboard' pois este HTML é para o cliente
     comum: {
-        messageInput: document.getElementById('mensagem-input-cliente'), // AJUSTADO
-        sendButton: document.getElementById('enviar-btn-cliente'), // AJUSTADO
-        chatMessages: document.getElementById('chat-messages-cliente'), // AJUSTADO
-        // Removendo chatHeader e chatInfo do objeto comum pois os IDs estão no objeto cliente
-        leaveChatBtn: null // Não existe botão de sair neste HTML, então null
+        messageInput: document.getElementById('mensagem-input-cliente'), // ID no seu HTML
+        sendButton: document.getElementById('enviar-btn-cliente'), // ID no seu HTML
+        chatMessages: document.getElementById('chat-messages-cliente'), // ID no seu HTML
+        leaveChatBtn: null // Não existe botão de sair neste HTML do cliente
     }
 };
 
@@ -41,7 +39,6 @@ function setupSocket() {
         socket.on('connect', () => {
             console.log('Conectado ao servidor Socket.IO!');
             if (currentProtocol) {
-                // Se for cliente e já tiver protocolo, tenta entrar na sala do chat
                 socket.emit('entrar_sala', { protocolo: currentProtocol, is_atendente: false });
             }
         });
@@ -71,7 +68,7 @@ function setupSocket() {
             if (data.protocolo === currentProtocol) {
                 // Determine o tipo de mensagem com base no remetente para aplicar a classe CSS correta
                 const messageType = data.remetente === userName ? 'client-message' : 'attendant-message';
-                displayMessage(data.remetente, data.texto, messageType, data.data); // USANDO client-message/attendant-message
+                displayMessage(data.remetente, data.texto, messageType, data.data);
             }
         });
 
@@ -80,8 +77,6 @@ function setupSocket() {
                 displayMessage('Sistema', `Status do chat atualizado para: ${data.status}`, 'system');
             }
         });
-
-        // Removendo 'novo_chat_aberto' pois é relevante apenas para o dashboard do prestador
     }
 }
 
@@ -94,13 +89,10 @@ function setupSocket() {
  */
 function displayMessage(sender, text, type, timestamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })) {
     const messageElement = document.createElement('div');
-    // Adiciona as classes 'message' (para estilo geral) e o 'type' específico (client-message, attendant-message, system)
     messageElement.classList.add('message', type);
 
-    // Ajusta a estrutura interna para corresponder ao seu CSS:
-    // <span class="message-sender">Remetente:</span> Texto da mensagem <span class="message-time">HH:MM</span>
     let senderHtml = '';
-    if (type !== 'system') { // Mensagens do sistema não precisam de remetente visível assim
+    if (type !== 'system') {
         senderHtml = `<span class="message-sender">${sender}:</span> `;
     }
 
@@ -110,7 +102,7 @@ function displayMessage(sender, text, type, timestamp = new Date().toLocaleTimeS
         <span class="message-time">${timestamp}</span>
     `;
     elements.comum.chatMessages.appendChild(messageElement);
-    elements.comum.chatMessages.scrollTop = elements.comum.chatMessages.scrollHeight; // Rola para o final
+    elements.comum.chatMessages.scrollTop = elements.comum.chatMessages.scrollHeight;
 }
 
 /**
@@ -122,18 +114,17 @@ function displayMessage(sender, text, type, timestamp = new Date().toLocaleTimeS
  */
 function loadChatHistory(protocolo, clienteNome = null, clienteEmail = null) {
     elements.comum.chatMessages.innerHTML = ''; // Limpa mensagens anteriores
-    
-    // ATUALIZA OS ELEMENTOS DE DISPLAY NO HEADER DO CHAT
+
     if (elements.cliente.protocoloDisplay) {
         elements.cliente.protocoloDisplay.textContent = protocolo;
     }
     if (elements.cliente.nomeDisplay && clienteNome) {
         elements.cliente.nomeDisplay.textContent = clienteNome;
-    } else {
-        elements.cliente.nomeDisplay.textContent = 'Carregando...'; // Caso o nome ainda não tenha chegado
+    } else if (elements.cliente.nomeDisplay) {
+        elements.cliente.nomeDisplay.textContent = 'Carregando...';
     }
 
-    setupSocket(); // Chama para garantir que o socket está ativo e os listeners configurados
+    setupSocket();
     socket.emit('entrar_sala', { protocolo: protocolo, is_atendente: false });
 
     return fetch(`${BACKEND_URL}/buscar_chat/${protocolo}`)
@@ -155,9 +146,8 @@ function loadChatHistory(protocolo, clienteNome = null, clienteEmail = null) {
                 if (elements.cliente.nomeDisplay) {
                     elements.cliente.nomeDisplay.textContent = data.nome;
                 }
-                
+
                 data.mensagens.forEach(msg => {
-                    // Determine o tipo de mensagem com base no remetente para aplicar a classe CSS correta
                     const messageType = msg.remetente === userName ? 'client-message' : 'attendant-message';
                     displayMessage(msg.remetente, msg.texto, messageType, msg.data);
                 });
@@ -180,16 +170,15 @@ function loadChatHistory(protocolo, clienteNome = null, clienteEmail = null) {
         });
 }
 
-// Removendo updateChatList e addDashboardButtonListeners pois são para o prestador/dashboard
-
 /**
  * Event Listeners e Lógica Principal
  */
 document.addEventListener('DOMContentLoaded', () => {
     userType = 'cliente'; // Sempre 'cliente' para este HTML
-    setupSocket(); // Inicializa o socket para o cliente
+    setupSocket();
 
     // Lógica do Cliente - Iniciar Chat
+    // Adicionado verificação 'if (elements.cliente.iniciarBtn)' para evitar erro se o elemento não existir
     if (elements.cliente.iniciarBtn) {
         elements.cliente.iniciarBtn.addEventListener('click', () => {
             userName = elements.cliente.nomeInput.value.trim();
@@ -234,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Lógica do Cliente - Acessar Chat Existente
+    // Adicionado verificação 'if (elements.cliente.acessarBtn)' para evitar erro se o elemento não existir
     if (elements.cliente.acessarBtn) {
         elements.cliente.acessarBtn.addEventListener('click', () => {
             const protocolo = elements.cliente.protocoloInput.value.trim();
@@ -243,21 +233,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             currentProtocol = protocolo;
             userName = "Cliente"; // Nome padrão para cliente ao acessar por protocolo
-            loadChatHistory(protocolo); // Carrega o histórico do chat
+            loadChatHistory(protocolo);
         });
     }
 
     // Lógica Comum - Enviar Mensagem
+    // Adicionado verificação 'if (elements.comum.sendButton)' para evitar erro se o elemento não existir
     if (elements.comum.sendButton) {
         elements.comum.sendButton.addEventListener('click', () => {
             const messageText = elements.comum.messageInput.value.trim();
             if (messageText && currentProtocol && socket) {
                 socket.emit('enviar_mensagem', {
                     protocolo: currentProtocol,
-                    remetente: userName, // Este é o nome do cliente que está digitando
+                    remetente: userName,
                     texto: messageText
                 });
-                elements.comum.messageInput.value = ''; // Limpa o input
+                elements.comum.messageInput.value = '';
             }
         });
 
@@ -268,6 +259,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    // O botão de sair não existe neste HTML, então a lógica foi removida.
 });
