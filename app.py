@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch() # ESSA LINHA DEVE SER A PRIMEIRA EXECUTÁVEL
+
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from models import db, Chat, Mensagem 
